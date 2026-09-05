@@ -1,0 +1,52 @@
+name: Materialize NFC portfolio
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.portfolio-payload/READY'
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check payload marker
+        id: payload
+        shell: bash
+        run: |
+          if [ -f .portfolio-payload/READY ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Reconstruct cleaned source tree
+        if: steps.payload.outputs.present == 'true'
+        shell: bash
+        run: |
+          cat .portfolio-payload/part-* | base64 -d > /tmp/nfc-portfolio.tar.gz
+          tar -xzf /tmp/nfc-portfolio.tar.gz
+          rm -f mcu/Core/Src/freertos_tasks_portfolio.c
+          rm -rf .portfolio-payload
+
+      - name: Commit materialized portfolio
+        if: steps.payload.outputs.present == 'true'
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+            exit 0
+          fi
+          git commit -m "feat(nfc): publish cleaned MCU and PC portfolio source"
+          git push
