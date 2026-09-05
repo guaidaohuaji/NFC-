@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - '.portfolio-payload/READY'
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -32,8 +33,8 @@ jobs:
         if: steps.payload.outputs.present == 'true'
         shell: bash
         run: |
-          cat .portfolio-payload/part-* | base64 -d > /tmp/nfc-portfolio.tar.gz
-          tar -xzf /tmp/nfc-portfolio.tar.gz
+          cat .portfolio-payload/part-[0-9][0-9][0-9] | base64 -d > /tmp/nfc-portfolio.tar.xz
+          tar -xJf /tmp/nfc-portfolio.tar.xz
           rm -f mcu/Core/Src/freertos_tasks_portfolio.c
           rm -rf .portfolio-payload
 
