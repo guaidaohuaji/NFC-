@@ -1,20 +1,20 @@
 # STM32F407 NFC 考勤系统
 
-基于 **STM32F407VETx + FreeRTOS** 的 NFC 考勤终端，配套 Python 上位机工具。工程覆盖 NFC 发卡/读卡/清卡、OLED 人机界面、W25Q128 配置与考勤记录持久化、Wi-Fi/NTP/天气，以及串口上位机协议。
+基于 **STM32F407VETx + FreeRTOS** 的 NFC 考勤终端，并配套 Python/Tkinter 上位机。项目覆盖 RC522 卡片管理、OLED 人机界面、W25Q128 配置与考勤记录持久化、ESP-01 联网/NTP/天气，以及自定义串口协议和 PC 端发卡工具。
 
-> 本仓库由实际工程整理而来。已移除本机调试路径、真实网络凭据和个人/学号类展示信息；`app_wifi_config.h` 不纳入版本管理。
+> 本仓库按求职作品集方式整理：保留本人项目的核心业务代码、板级驱动、CubeMX 配置和上位机源码；不重复上传 STM32 HAL、CMSIS、FreeRTOS 等官方 SDK 源码及 Debug/编译缓存。真实 Wi-Fi、天气 API 等配置不进入版本管理。
 
-## 功能概览
+## 主要功能
 
-- **NFC 卡管理**：RC522 + MIFARE Classic，支持普通卡、图像卡、管理员卡。
-- **发卡数据**：头像、姓名、部门等数据经串口下发并写入卡片，支持 CRC 校验。
-- **考勤记录**：W25Q128 保存配置与考勤日志，支持 `ENTRY / EXIT / BOTH` 模式。
-- **OLED 界面**：日期、星期、大号时间、设备编号、考勤模式、温度和结果页。
-- **联网功能**：ESP-01 通过 USART6 联网，可进行 NTP 校时和天气查询。
-- **PC 上位机**：Python/Tkinter 工具支持发卡、读卡、清卡、日志查看和串口调试。
-- **FreeRTOS 任务化设计**：GUI、按键、UART、NFC、Wi-Fi 等任务解耦运行。
+- **NFC 卡管理**：RC522 + MIFARE Classic，支持发卡、读卡、清卡及不同卡类型处理。
+- **图文卡数据**：头像 48×64 1bit、姓名/部门 80×16 1bit，经串口分块传输并写入卡片，使用 CRC-16/XMODEM 校验。
+- **考勤记录**：W25Q128 保存设备配置与考勤日志，支持 `ENTRY / EXIT / BOTH` 模式。
+- **FreeRTOS 多任务**：GUI、NFC、按键、UART、Wi-Fi 等任务解耦运行。
+- **OLED 界面**：显示时间、日期、星期、设备编号、考勤模式、温度及刷卡结果。
+- **联网功能**：ESP-01 通过 USART6 联网，支持 NTP 校时与天气信息获取。
+- **PC 上位机**：Python/Tkinter + pyserial + Pillow，支持发卡、读卡、清卡、预览和串口交互。
 
-## 硬件与软件
+## 技术栈
 
 | 模块 | 方案 |
 |---|---|
@@ -25,95 +25,110 @@
 | 外部 Flash | W25Q128 / SPI |
 | 温度 | DS18B20 |
 | Wi-Fi | ESP-01 / USART6 |
-| PC 通信 | USART1 |
-| 上位机 | Python + Tkinter + pyserial + Pillow |
+| PC 通信 | USART1 115200 8N1 |
+| 上位机 | Python / Tkinter / pyserial / Pillow |
 
-## 工程结构
+## 软件结构
 
 ```text
 .
 ├── mcu/
-│   ├── App/                 # 配置、考勤日志
-│   ├── Bsp/                 # RC522/OLED/W25Q128/ESP01/DS18B20/按键/LED 等
-│   ├── Core/                # CubeMX 生成代码与 FreeRTOS 任务
-│   ├── Drivers/             # STM32 HAL / CMSIS
-│   ├── Middlewares/         # FreeRTOS
-│   ├── NFCAttend.ioc
+│   ├── App/                     # 设备配置、考勤日志等业务模块
+│   │   ├── app_config.c/.h
+│   │   ├── attendance_log.c/.h
+│   │   └── app_wifi_config.example.h
+│   ├── Bsp/                     # 项目使用的板级驱动
+│   │   ├── ESP01/
+│   │   ├── NFC/
+│   │   ├── OLED/
+│   │   ├── RTC/
+│   │   ├── UartDrv/
+│   │   ├── w25qxx/
+│   │   ├── ds18b20/
+│   │   ├── Key/
+│   │   ├── LED/
+│   │   └── delay/
+│   ├── Core/
+│   │   ├── Inc/
+│   │   └── Src/
+│   │       ├── main.c
+│   │       └── freertos.c       # 主要任务与业务流程
+│   ├── NFCAttend.ioc            # CubeMX 配置
 │   ├── Makefile
+│   ├── STM32F407XX_FLASH.ld
 │   └── startup_stm32f407xx.s
 ├── pc/
-│   ├── issue_card.py
-│   ├── issue_card_gui.py
+│   ├── issue_card.py             # CLI 上位机
+│   ├── issue_card_gui.py         # GUI 上位机
 │   └── requirements.txt
 ├── .gitignore
 └── README.md
 ```
 
-## FreeRTOS 任务
+## FreeRTOS 任务设计
 
-工程中主要任务包括：
+`freertos.c` 中包含项目的主要业务逻辑，核心任务包括：
 
-- `guiTask`：OLED 页面与状态刷新
-- `keyTask`：按键扫描与交互
-- `uartTask`：USART1 命令接收与协议处理
-- `nfcTask`：RC522 卡片检测、读写和考勤逻辑
-- `wifiTask`：ESP-01、NTP、天气
+- `guiTask`：OLED 页面与状态刷新。
+- `nfcTask`：RC522 卡片检测、读写与考勤流程。
+- `keyTask`：按键扫描、消抖和交互。
+- `uartTask`：USART1 命令接收与上位机协议处理。
+- `wifiTask`：ESP-01 联网、NTP 校时和天气更新。
 
-## 串口协议示例
+## 串口协议
 
-USART1 面向 PC 上位机，工程中实现了如下命令族：
+上位机通过 USART1 与 MCU 通信，主要命令包括：
 
 ```text
-PING
-HELP
-CONFIG_GET
-CONFIG_SET_MODE
-ISSUE_BEGIN
-ISSUE_IMAGE_BEGIN
-ISSUE_IMAGE_DATA
-ISSUE_IMAGE_END
-ISSUE_COMMIT
-ISSUE_CANCEL
-CARD_READ
-CARD_CLEAR
-LOG_LIST
-LOG_CLEAR
-LIST
+PING / HELP
+ISSUE_BEGIN / ISSUE_CANCEL
+IMAGE_BEGIN / IMAGE_DATA / IMAGE_END / COMMIT
+CARD_READ / CARD_CLEAR
+CONFIG_GET / CONFIG_SET_MODE
 ```
 
-发卡流程采用分阶段状态机，包含图像数据分块传输和 CRC 校验；读卡会返回卡片元数据和 payload。
+图像与文本数据按固定块分片发送，MCU 完成 CRC 校验后再提交写卡；读卡流程返回 UID、ID、卡类型、数据长度、CRC 与 payload。
 
 ## Wi-Fi / NTP / 天气配置
 
-真实配置文件不会提交。首次使用时复制示例配置：
+仓库只保留示例文件：
 
-```bash
-cd mcu
-cp App/app_wifi_config.example.h App/app_wifi_config.h
+```text
+mcu/App/app_wifi_config.example.h
 ```
 
-然后填写自己的热点和天气 API Key。
-
-## MCU 编译
-
-需要 ARM GNU Toolchain：
+实际使用时复制为：
 
 ```bash
-arm-none-eabi-gcc --version
-cd mcu
-make clean
-make
+cp mcu/App/app_wifi_config.example.h mcu/App/app_wifi_config.h
 ```
 
-Makefile 目标为 `NFCAttend`，生成文件位于 `mcu/build/`。
+再填写自己的 Wi-Fi 和天气 API 配置。`app_wifi_config.h` 已加入 `.gitignore`，避免将真实凭据提交到仓库。
+
+## MCU 工程说明
+
+本仓库是作品集核心源码版，因此未重复收录 STM32CubeF4 HAL、CMSIS 和 FreeRTOS 官方源码。`NFCAttend.ioc`、启动文件、链接脚本以及项目自有源码均保留，可用于查看外设配置、任务划分和业务实现。
 
 ## PC 上位机
+
+安装依赖：
 
 ```bash
 cd pc
 python -m venv .venv
 pip install -r requirements.txt
+```
+
+启动 GUI：
+
+```bash
 python issue_card_gui.py
 ```
 
-主要功能包括串口选择、发卡、读卡、清卡、日志查询和协议调试。
+也可以使用 `issue_card.py` 通过命令行完成数据生成、预览和串口发送。
+
+## 仓库整理说明
+
+- 未提交 `Debug/`、`build/`、目标文件、链接输出和 IDE 缓存。
+- 未提交真实 `app_wifi_config.h`。
+- 保留项目核心业务代码和自编写/修改的板级驱动，方便招聘方直接查看关键实现。
