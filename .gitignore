@@ -1,0 +1,31 @@
+# Build outputs
+build/
+Debug/
+Release/
+*.o
+*.obj
+*.d
+*.elf
+*.axf
+*.out
+*.bin
+*.hex
+*.map
+*.lst
+*.log
+
+# Local/editor state
+.vscode/
+.idea/
+.clangd/
+*.idx
+__pycache__/
+*.pyc
+.venv/
+
+# Local credentials/config
+mcu/App/app_wifi_config.h
+
+# OS files
+.DS_Store
+Thumbs.db
